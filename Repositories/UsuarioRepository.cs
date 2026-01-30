@@ -84,6 +84,89 @@ namespace backEndGamesTito.API.Repositories
                 // Se não encontrar o usuário, retorna 'nulo'
                 return null;
             }
+
+        }
+        // --- Repositories/UsuarioRepository.cs ---
+        // Certifique-se de que o método está DENTRO da classe UsuarioRepository
+
+        public async Task<Usuario?> GetUserByTokenAsync(string token)
+        {
+            using (var connection = new SqlConnection(_connectionString))
+            {
+                await connection.OpenAsync();
+                // Buscamos o usuário onde o HashPass coincide com o token enviado
+                var commandText = "SELECT TOP 1 * FROM dbo.Usuario WHERE HashPass = @Token";
+
+                using (var command = new SqlCommand(commandText, connection))
+                {
+                    command.Parameters.AddWithValue("@Token", token);
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        if (await reader.ReadAsync())
+                        {
+                            return new Usuario
+                            {
+                                UsuarioId = reader.GetInt32(reader.GetOrdinal("UsuarioId")),
+                                NomeCompleto = reader.GetString(reader.GetOrdinal("NomeCompleto")),
+                                Email = reader.GetString(reader.GetOrdinal("Email")),
+                                PassWordHash = reader.GetString(reader.GetOrdinal("PassWordHash")),
+                                HashPass = reader.GetString(reader.GetOrdinal("HashPass")),
+                                StatusId = reader.GetInt32(reader.GetOrdinal("StatusId")),
+                                // Mapeie os outros campos se necessário
+                            };
+                        }
+                    }
+                }
+            }
+            return null; // Retorna null se o token não existir
+        }
+        // --- Adicione este método ao seu UsuarioRepository.cs ---
+
+public async Task UpdatePasswordAsync(int usuarioId, string newPasswordHash)
+{
+    using (var connection = new SqlConnection(_connectionString))
+    {
+        await connection.OpenAsync();
+
+        // Implementação do Passo C: Atualiza a senha, limpa o token (HashPass) e atualiza a data
+        var commandText = @"
+            UPDATE dbo.Usuario 
+            SET PassWordHash = @NewPassword, 
+                HashPass = '', 
+                DataAtualizacao = @Now 
+            WHERE UsuarioId = @UsuarioId";
+
+        using (var command = new SqlCommand(commandText, connection))
+        {
+            command.Parameters.AddWithValue("@NewPassword", newPasswordHash);
+            command.Parameters.AddWithValue("@Now", DateTime.Now);
+            command.Parameters.AddWithValue("@UsuarioId", usuarioId);
+
+            await command.ExecuteNonQueryAsync();
+        }
+    }
+}
+        public async Task UpdateRecoveryTokenAsync(int usuarioId, string token)
+        {
+            using (var connection = new SqlConnection(_connectionString))
+            {
+                await connection.OpenAsync();
+
+                var commandText = @"
+                    UPDATE dbo.Usuario 
+                    SET HashPass = @Token, 
+                        DataAtualizacao = @Now 
+                    WHERE UsuarioId = @UsuarioId";
+
+                using (var command = new SqlCommand(commandText, connection))
+                {
+                    command.Parameters.AddWithValue("@Token", token);
+                    command.Parameters.AddWithValue("@Now", DateTime.Now);
+                    command.Parameters.AddWithValue("@UsuarioId", usuarioId);
+
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
         }
     }
 }

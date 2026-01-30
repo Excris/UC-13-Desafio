@@ -1,74 +1,69 @@
 ﻿// --- Controllers/AccountController.cs
-using System;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.SqlClient;
-
+using backEndGamesTito.Api.Models;
 using backEndGamesTito.API.Models;
 using backEndGamesTito.API.Repositories;
-
-using System.Threading.Tasks;
-using static Microsoft.ApplicationInsights.MetricDimensionNames.TelemetryContext;
-
-// --- ADICIONAR ELEMENTOS PARA CRIPTOGRAFIA ---
+// 1. IMPORT DO SERVICE
+using backEndGamesTito.API.Services;
+using BCrypt.Net;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
+using System;
 using System.Security.Cryptography;
 using System.Text;
-using BCrypt.Net;
+using System.Threading.Tasks;
 
 // Usar o banco de dados com o DbUsuario e os atributos da classe Usuario
 using DbUsuario = backEndGamesTito.API.Data.Models.Usuario;
-using Microsoft.AspNetCore.Identity.Data;
 
 namespace backEndGamesTito.API.Controllers
 {
-    // criando as rotas para o controller de conta
     [ApiController]
     [Route("api/[controller]")]
     public class AccountController : ControllerBase
     {
         private readonly UsuarioRepository _usuarioRepository;
-        public AccountController(UsuarioRepository usuarioRepository)
+        // 2. DECLARAÇÃO DO EMAIL SERVICE
+        private readonly EmailService _emailService;
+
+        // 3. CONSTRUTOR ATUALIZADO (INJEÇÃO DE DEPENDÊNCIA)
+        public AccountController(UsuarioRepository usuarioRepository, EmailService emailService)
         {
             _usuarioRepository = usuarioRepository;
+            _emailService = emailService;
         }
-        // Rota para registrar um novo usuário
-        [HttpPost("register")]
 
-        /* 
-            ********** -- MÉTODO DE REGISTRO DE 'NOVO' USUARIO -- **********
-        */
+        // ===================================================================================
+        // ROTAS DE AUTENTICAÇÃO
+        // ===================================================================================
+
+        [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterRequestModel model)
         {
             try
             {
-                // *** Criando a criptografia ***
-
                 DateTime agora = DateTime.Now;
-                // Converte a data em string
                 string dataString = agora.ToString();
-                // Palavra passe
                 string ApiKey = "mangaPara_todos_ComLeite_kkk";
 
-                // Cria a senha e email aplicando SHA256
+                // --- CRIPTOGRAFIA PADRÃO (LÓGICA COMPLEXA) ---
                 string PassSHA256 = ComputeSha256Hash(model.PassWordHash);
                 string EmailSHA256 = ComputeSha256Hash(model.Email);
 
-                // Criando a string para a criptografia da senha e hash(para recuperar senha)
+                // Montagem da String
                 string PassCrip = PassSHA256 + EmailSHA256 + ApiKey;
+                string HashCrip = EmailSHA256 + PassSHA256 + dataString + ApiKey; // Token inicial (opcional)
 
-                string HashCrip = EmailSHA256 + PassSHA256 + dataString + ApiKey;
-
-                // Aplicando o BCrypt
+                // Hashing Final com BCrypt
                 string PassBCrypt = BCrypt.Net.BCrypt.HashPassword(PassCrip);
                 string HashBCrypt = BCrypt.Net.BCrypt.HashPassword(HashCrip);
 
-                // Criando o 'array' com todos os dados do usuário para depois ser gravado
                 var novoUsuario = new DbUsuario
                 {
                     NomeCompleto = model.NomeCompleto,
                     Email = model.Email,
                     PassWordHash = PassBCrypt,
                     HashPass = HashBCrypt,
-                    DataAtualizacao = DateTime.Now, //  OU -- DataAtualizacao = agora,
+                    DataAtualizacao = DateTime.Now,
                     StatusId = 2
                 };
 
@@ -76,54 +71,157 @@ namespace backEndGamesTito.API.Controllers
 
                 return Ok(new
                 {
-                    erro = false, // success = true,
+                    erro = false,
                     message = "Usuário cadastrado com sucesso!",
-                    usuario = new
-                    {
-                        model.NomeCompleto,
-                        model.Email,
-                        model.PassWordHash
-                    }
+                    usuario = new { model.NomeCompleto, model.Email }
                 });
             }
             catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
             {
-                // Erro de email duplicado pois o valor 'UNIQUE' está no campo no banco de dados
-                return Conflict(new
+                return Conflict(new { erro = true, message = "Este email já está em uso!" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { erro = true, message = "Sistema indisponivel no momento.", codErro = ex.Message });
+            }
+        }
+
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] LoginRequestModel model)
+        {
+            try
+            {
+                var usuario = await _usuarioRepository.GetUserByEmailAsync(model.Email);
+
+                if (usuario == null)
                 {
-                    erro = true, // success = false,
-                    message = "Este email já está em uso!"
+                    return Unauthorized(new { erro = true, message = "E-mail ou senha inválidos." });
+                }
+
+                // --- REPETIÇÃO DA LÓGICA DE CRIPTOGRAFIA (OBRIGATÓRIO SER IGUAL AO REGISTER) ---
+                string ApiKey = "mangaPara_todos_ComLeite_kkk";
+
+                string PassSHA256 = ComputeSha256Hash(model.PassWordHash);
+                string EmailSHA256 = ComputeSha256Hash(model.Email);
+
+                string PassCripParaVerificar = PassSHA256 + EmailSHA256 + ApiKey;
+
+                // Comparação BCrypt
+                if (!BCrypt.Net.BCrypt.Verify(PassCripParaVerificar, usuario.PassWordHash))
+                {
+                    return Unauthorized(new { erro = true, message = "E-mail ou senha inválidos." });
+                }
+
+                return Ok(new
+                {
+                    erro = false,
+                    message = "Login realizado com sucesso!",
+                    usuario = new { usuario.NomeCompleto, usuario.Email }
                 });
             }
             catch (Exception ex)
             {
-                //return StatusCode(500, new { message = $"Erro: {ex.Message}" });
-                return StatusCode(500, new
-                {
-                    erro = true, // success = false,
-                    message = "Sistema indisponivel no momento tente mais tarde!",
-                    codErro = $"Erro: {ex.Message}"
-                });
+                return StatusCode(500, new { erro = true, message = "Erro ao processar login.", codErro = ex.Message });
             }
         }
 
-        // ***** Cria uma instância de SHA256 || MÉTODO DE HASHING DO SHA256 *****
+        // ===================================================================================
+        // ROTAS DE RECUPERAÇÃO DE SENHA
+        // ===================================================================================
+
+        // 4. NOVO MÉTODO: SOLICITAR RECUPERAÇÃO (ENVIA O E-MAIL)
+        [HttpPost("forgot-password")]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordModel model)
+        {
+            try
+            {
+                var usuario = await _usuarioRepository.GetUserByEmailAsync(model.Email);
+
+                // Segurança: Resposta padrão mesmo se o e-mail não existir
+                if (usuario == null)
+                    return Ok(new { erro = false, message = "Se o e-mail existir, as instruções foram enviadas." });
+
+                // Gera Token Único
+                string token = Guid.NewGuid().ToString("N");
+
+                // Salva o Token no Banco (Reaproveitando campo HashPass temporariamente ou campo específico)
+                // Nota: Certifique-se de que o método UpdatePasswordAsync ou similar trate isso, 
+                // ou crie um UpdateRecoveryTokenAsync no repositório.
+                // Para simplificar aqui, vamos assumir que o UpdatePasswordAsync pode ser usado ou adaptado,
+                // mas idealmente teríamos: await _usuarioRepository.SaveRecoveryTokenAsync(usuario.UsuarioId, token);
+                // Vou usar uma lógica genérica de update aqui para ilustrar o fluxo:
+
+                // *ATENÇÃO*: Você precisa garantir que tem um método no Repository para salvar SÓ o token.
+                // Vou assumir que você criou o 'UpdateRecoveryTokenAsync' conforme conversamos.
+                // Se não criou, use o UpdatePasswordAsync passando a senha atual (gambiarra) ou crie o método.
+                await _usuarioRepository.UpdateRecoveryTokenAsync(usuario.UsuarioId, token);
+
+                // Envia o E-mail
+                await _emailService.SendRecoveryEmailAsync(usuario.Email, token);
+
+                return Ok(new { erro = false, message = "E-mail enviado com sucesso!" });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message); // Log interno
+                return StatusCode(500, new { erro = true, message = "Erro ao enviar e-mail." });
+            }
+        }
+
+        [HttpPost("reset-password")]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordModel model)
+        {
+            try
+            {
+                // Passo A: Busca pelo token
+                var usuario = await _usuarioRepository.GetUserByTokenAsync(model.Token);
+
+                // Passo B: Validações
+                if (usuario == null || string.IsNullOrEmpty(usuario.HashPass))
+                {
+                    return BadRequest(new { erro = true, message = "Token inválido ou já utilizado!" });
+                }
+
+                if (usuario.DataAtualizacao.HasValue && usuario.DataAtualizacao.Value.AddMinutes(15) < DateTime.Now)
+                {
+                    return BadRequest(new { erro = true, message = "Link expirado!" });
+                }
+
+                // Passo C: Atualização da Senha com a Lógica CORRETA
+                // *** CORREÇÃO: Usar a mesma lógica do Register/Login ***
+                string ApiKey = "mangaPara_todos_ComLeite_kkk";
+
+                string PassSHA256 = ComputeSha256Hash(model.NewPassword);
+                string EmailSHA256 = ComputeSha256Hash(usuario.Email); // Pegamos o e-mail do usuário recuperado do banco
+
+                string PassCrip = PassSHA256 + EmailSHA256 + ApiKey;
+
+                // Gera o Hash final compatível com o Login
+                string newPassBCrypt = BCrypt.Net.BCrypt.HashPassword(PassCrip);
+
+                await _usuarioRepository.UpdatePasswordAsync(usuario.UsuarioId, newPassBCrypt);
+
+                return Ok(new { erro = false, message = "Senha redefinida com sucesso!" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { erro = true, message = "Erro interno no servidor.", codErro = ex.Message });
+            }
+        }
+
+        // ===================================================================================
+        // MÉTODOS AUXILIARES
+        // ===================================================================================
         private string ComputeSha256Hash(string rawData)
         {
             using (SHA256 sha256Hash = SHA256.Create())
             {
-                // Computa o hash do dado de entrada 'string'
-                // e retorna o resultado como um 'array' de bytes
                 byte[] bytes = sha256Hash.ComputeHash(Encoding.UTF8.GetBytes(rawData));
-
-                // Converte o 'array' de bytes em uma string hexadecimal
                 StringBuilder builder = new StringBuilder();
-
                 for (int i = 0; i < bytes.Length; i++)
                 {
                     builder.Append(bytes[i].ToString("x2"));
                 }
-
                 return builder.ToString();
             }
         }
