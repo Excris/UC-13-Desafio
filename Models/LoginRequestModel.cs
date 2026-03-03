@@ -1,5 +1,6 @@
-﻿// --- Models/LoginRequestModel.cs
+﻿// --- Models/LoginRequestModel.cs//
 
+//--//
 using System.ComponentModel.DataAnnotations;
 
 namespace backEndGamesTito.Api.Models
