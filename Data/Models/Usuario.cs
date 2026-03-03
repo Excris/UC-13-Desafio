@@ -1,6 +1,7 @@
 ﻿
 // --- Data/Models/Usuario.cs
-// -- AAAAAAAAAAAAAAAAAAAA
+// -- Atualização aplicando novas colunas Recebimento do codigo, recebimento de um tempo de expitração
+
 using System;
 
 namespace backEndGamesTito.API.Data.Models
@@ -15,5 +16,8 @@ namespace backEndGamesTito.API.Data.Models
         public DateTime DataCriacao { get; set; }
         public DateTime? DataAtualizacao { get; set; }
         public int StatusId { get; set; }
+        // -- Novas Colunas
+        public string? ResetToken { get; set; }
+        public DateTime ResetTokenExpires { get; set; }
     }
 }

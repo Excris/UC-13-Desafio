@@ -31,13 +31,14 @@ namespace backEndGamesTito.API.Repositories
                         (@NomeCompleto, @Email, @PassWordHash, @HashPass, @DataAtualizacao, @StatusId)
                 ";
 
-                using (var command = new SqlCommand(commandText, connection)) {
+                using (var command = new SqlCommand(commandText, connection))
+                {
                     command.Parameters.AddWithValue("@NomeCompleto", user.NomeCompleto);
                     command.Parameters.AddWithValue("@Email", user.Email);
                     command.Parameters.AddWithValue("@PassWordHash", user.PassWordHash);
                     command.Parameters.AddWithValue("@HashPass", user.HashPass);
                     // Esta linha da 'DataAtualização entrada como objeto podendo ser um valor 'nulo'
-                    command.Parameters.AddWithValue("@DataAtualizacao", (object)user.DataAtualizacao ?? DBNull.Value);
+                    command.Parameters.AddWithValue("@DataAtualizacao", user.DataAtualizacao as object ?? DBNull.Value);
                     command.Parameters.AddWithValue("@StatusId", user.StatusId);
 
                     await command.ExecuteNonQueryAsync();
@@ -122,31 +123,31 @@ namespace backEndGamesTito.API.Repositories
         }
         // --- Adicione este método ao seu UsuarioRepository.cs ---
 
-public async Task UpdatePasswordAsync(int usuarioId, string newPasswordHash)
-{
-    using (var connection = new SqlConnection(_connectionString))
-    {
-        await connection.OpenAsync();
+        public async Task UpdatePasswordAsync(int usuarioId, string newPasswordHash)
+        {
+            using (var connection = new SqlConnection(_connectionString))
+            {
+                await connection.OpenAsync();
 
-        // Implementação do Passo C: Atualiza a senha, limpa o token (HashPass) e atualiza a data
-        var commandText = @"
+                // Implementação do Passo C: Atualiza a senha, limpa o token (HashPass) e atualiza a data
+                var commandText = @"
             UPDATE dbo.Usuario 
             SET PassWordHash = @NewPassword, 
                 HashPass = '', 
                 DataAtualizacao = @Now 
             WHERE UsuarioId = @UsuarioId";
 
-        using (var command = new SqlCommand(commandText, connection))
-        {
-            command.Parameters.AddWithValue("@NewPassword", newPasswordHash);
-            command.Parameters.AddWithValue("@Now", DateTime.Now);
-            command.Parameters.AddWithValue("@UsuarioId", usuarioId);
+                using (var command = new SqlCommand(commandText, connection))
+                {
+                    command.Parameters.AddWithValue("@NewPassword", newPasswordHash);
+                    command.Parameters.AddWithValue("@Now", DateTime.Now);
+                    command.Parameters.AddWithValue("@UsuarioId", usuarioId);
 
-            await command.ExecuteNonQueryAsync();
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
         }
-    }
-}
-        public async Task UpdateRecoveryTokenAsync(int usuarioId, string token)
+        public async Task UpdateRecoveryTokenAsync(int usuarioId, string token, DateTime expiracao)
         {
             using (var connection = new SqlConnection(_connectionString))
             {
@@ -154,8 +155,8 @@ public async Task UpdatePasswordAsync(int usuarioId, string newPasswordHash)
 
                 var commandText = @"
                     UPDATE dbo.Usuario 
-                    SET HashPass = @Token, 
-                        DataAtualizacao = @Now 
+                    SET ResetToken = @Token, 
+                        ResetTokenExpires = @Expiracao
                     WHERE UsuarioId = @UsuarioId";
 
                 using (var command = new SqlCommand(commandText, connection))
@@ -168,5 +169,6 @@ public async Task UpdatePasswordAsync(int usuarioId, string newPasswordHash)
                 }
             }
         }
+
     }
 }
