@@ -31,7 +31,7 @@ namespace backEndGamesTito.API.Controllers
             _usuarioRepository = usuarioRepository;
             _emailService = emailService;
         }
-
+        //dd d
         // ===================================================================================
         // ROTAS DE AUTENTICAÇÃO
         // ===================================================================================
