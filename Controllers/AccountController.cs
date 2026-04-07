@@ -154,7 +154,11 @@ namespace backEndGamesTito.API.Controllers
                 // *ATENÇÃO*: Você precisa garantir que tem um método no Repository para salvar SÓ o token.
                 // Vou assumir que você criou o 'UpdateRecoveryTokenAsync' conforme conversamos.
                 // Se não criou, use o UpdatePasswordAsync passando a senha atual (gambiarra) ou crie o método.
-                await _usuarioRepository.UpdateRecoveryTokenAsync(usuario.UsuarioId, token);
+                // 1. Defina o tempo de expiração
+                DateTime expiracao = DateTime.Now.AddMinutes(15);
+
+                // 2. Passe os TRÊS argumentos exigidos pelo método
+                await _usuarioRepository.UpdateRecoveryTokenAsync(usuario.UsuarioId, token, expiracao);
 
                 // Envia o E-mail
                 await _emailService.SendRecoveryEmailAsync(usuario.Email, token);
